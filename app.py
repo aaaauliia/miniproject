@@ -1,10 +1,20 @@
 from flask import Flask, render_template, request, jsonify
+import requests
+from bs4 import BeautifulSoup
 from pymongo import MongoClient
-import certifi
-from bson.objectid import ObjectId
 
-client = MongoClient("mongodb+srv://testuser:testuser@cluster0.zbwu59l.mongodb.net/?retryWrites=true&w=majority", tlsCAFile=certifi.where())
-db = client.dbsparta
+import os
+from os.path import join, dirname
+from dotenv import load_dotenv
+
+dotenv_path = join(dirname(__file__), '.env')
+load_dotenv(dotenv_path)
+
+MONGODB_URI = os.environ.get("MONGODB_URI")
+DB_NAME =  os.environ.get("DB_NAME")
+
+client = MongoClient(MONGODB_URI)
+db = client[DB_NAME]
 
 app = Flask(__name__)
 
@@ -12,39 +22,44 @@ app = Flask(__name__)
 def home():
    return render_template('index.html')
 
-@app.route("/bucket", methods=["POST"])
-def bucket_post():
-    bucket_receive = request.form["bucket_give"]
-    count = db.bucket.count_documents({})
-    num = count + 1
+@app.route("/movie", methods=["POST"])
+def movie_post():
+    # sample_receive = request.form['sample_give']
+    url_receive = request.form['url_give']
+    star_receive = request.form['star_give']
+    comment_receive = request.form['comment_give']
+
+    headers = {'User-Agent' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36'}
+    data = requests.get(url_receive, headers=headers)
+
+    soup = BeautifulSoup(data.text, 'html.parser')
+
+    # From here on, we will write the code for extracting data from meta tags
+
+    og_image = soup.select_one('meta[property="og:image"]')
+    og_title = soup.select_one('meta[property="og:title"]')
+    og_description = soup.select_one('meta[property="og:description"]')
+
+    image = og_image['content']
+    title = og_title['content']
+    description = og_description['content']
+    
     doc = {
-        'num':num,
-        'bucket' : bucket_receive,
-        'done':0
+        'image': image,
+        'title': title,
+        'description': description,
+        'star': star_receive,
+        'comment': comment_receive,
     }
-    db.bucket.insert_one(doc)
-    return jsonify({'msg': 'data saved!'})
 
-@app.route("/bucket/done", methods=["POST"])
-def bucket_done():
-    num_receive = request.form["num_give"]
-    db.bucket.update_one(
-        
-        {'num': int(num_receive)},
-        {'$set': {'done': 1}}
-    )
-    return jsonify({'msg': 'Update Done!'})
+    db.movies.insert_one(doc)
 
-@app.route("/bucket", methods=["GET"])
-def bucket_get():
-    buckets_list = list(db.bucket.find({},{'_id':False}))
-    return jsonify({'buckets':buckets_list})
+    return jsonify({'msg':'POST request!'})
 
-@app.route("/bucket/delete", methods=["POST"])
-def bucket_delete():
-    num_receive = request.form["num_give"]
-    db.bucket.delete_one()
-    return jsonify({'msg': 'succes delete!'})
+@app.route("/movie", methods=["GET"])
+def movie_get():
+    movie_list = list(db.movies.find({}, {'_id': False}))
+    return jsonify({'movies': movie_list})
 
 if __name__ == '__main__':
    app.run('0.0.0.0', port=5000, debug=True)
